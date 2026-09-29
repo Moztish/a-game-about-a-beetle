@@ -27,13 +27,6 @@ const insertUser = database.prepare(`
   VALUES (@nickname, @shellColor, @email, @passwordHash, @passwordSalt)
 `);
 
-const publicFiles = new Map([
-  ['/', 'index.html'],
-  ['/index.html', 'index.html'],
-  ['/app.js', 'app.js'],
-  ['/styles.css', 'styles.css']
-]);
-
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   const passwordHash = crypto.scryptSync(password, salt, 64).toString('hex');
   return { passwordHash, passwordSalt: salt };
@@ -106,11 +99,8 @@ const server = http.createServer(async (request, response) => {
     return handleRegistration(request, response);
   }
 
-  const publicFile = publicFiles.get(requestUrl.pathname);
-  if (!publicFile) return sendJson(response, 404, { error: 'Страница не найдена.' });
-
-  const filePath = path.join(__dirname, publicFile);
-  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+  const filePath = requestUrl.pathname === '/' ? path.join(__dirname, 'index.html') : path.join(__dirname, requestUrl.pathname);
+  if (!filePath.startsWith(__dirname) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     return sendJson(response, 404, { error: 'Страница не найдена.' });
   }
 
