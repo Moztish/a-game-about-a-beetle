@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Регистрация в игре Навозник">
+  <title>Навозник — регистрация</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="auth-shell">
+    <section class="world-panel" aria-label="Описание игры">
+      <div class="world-topline">
+        <span class="brand-mark" aria-hidden="true">✦</span>
+        <span>Земля. Труд. Слава.</span>
+      </div>
+
+      <div class="world-copy">
+        <p class="eyebrow">Онлайн-игра о великом пути</p>
+        <h1>Стань легендой<br><em>навозного царства.</em></h1>
+        <p class="intro">Скатывай самые большие шары, обгоняй соперников и оставляй свой след в истории подземного мира.</p>
+      </div>
+
+      <div class="beetle-scene" aria-hidden="true">
+        <div class="moon"></div>
+        <div class="orbit orbit-one"></div>
+        <div class="orbit orbit-two"></div>
+        <div class="beetle">
+          <span class="antenna antenna-left"></span>
+          <span class="antenna antenna-right"></span>
+          <span class="leg leg-one"></span>
+          <span class="leg leg-two"></span>
+          <span class="leg leg-three"></span>
+          <span class="shell"></span>
+          <span class="shell-line"></span>
+          <span class="head"></span>
+        </div>
+        <div class="ground ground-back"></div>
+        <div class="ground ground-front"></div>
+        <div class="dust dust-one"></div>
+        <div class="dust dust-two"></div>
+        <div class="dust dust-three"></div>
+      </div>
+
+      <div class="world-footer">
+        <span class="status-dot"></span>
+        <span>12 480 жуков уже в игре</span>
+      </div>
+    </section>
+
+    <section class="form-panel" aria-labelledby="registration-title">
+      <div class="form-header">
+        <div class="tiny-logo" aria-hidden="true">Н</div>
+        <span class="login-link">Не помнишь пароль? <a href="#recover" id="open-recovery">Восстановить</a></span>
+      </div>
+
+      <div class="form-content">
+        <p class="form-kicker">Новая нора</p>
+        <h2 id="registration-title">Создай своего<br><span>навозника.</span></h2>
+        <p class="form-note">Регистрация займёт меньше минуты.</p>
+
+        <form action="/api/register" method="post">
+          <div class="field-row">
+            <label class="field">
+              <span>Имя жука</span>
+              <input type="text" name="nickname" placeholder="Например, Жорик" autocomplete="nickname" required>
+            </label>
+            <label class="field">
+              <span>Цвет панциря</span>
+              <select name="shell-color">
+                <option>Глубокий мох</option>
+                <option>Ночная слива</option>
+                <option>Медный песок</option>
+                <option>Тёмный янтарь</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Почта</span>
+            <input type="email" name="email" placeholder="ты@пример.ру" autocomplete="email" required>
+          </label>
+
+          <label class="field">
+            <span>Пароль</span>
+            <input type="password" name="password" placeholder="Минимум 8 символов" minlength="8" autocomplete="new-password" required>
+          </label>
+
+          <label class="check-row">
+            <input type="checkbox" name="terms" required>
+            <span class="custom-check" aria-hidden="true">✓</span>
+            <span>Я принимаю <a href="#rules">правила подземного мира</a></span>
+          </label>
+
+          <button type="submit">Выкатиться в игру <span aria-hidden="true">↗</span></button>
+        </form>
+
+        <p class="privacy-note"><span aria-hidden="true">♢</span> Твои данные останутся в норе. Мы не делимся ими с птицами.</p>
+      </div>
+    </section>
+  </main>
+  <section class="story-screen" id="game-prologue" aria-labelledby="prologue-title" hidden>
+    <div class="story-content">
+      <p class="story-kicker">Путь начинается, <span id="prologue-name"></span></p>
+      <h2 id="prologue-title">Почему жук<br><em>покинул нору.</em></h2>
+      <p>Однажды ручей у дома пересох, а листья в родном саду начали вянуть. След ведёт в нору Валика: он охраняет карту подземных источников. За кражей семян, питающих ручьи, стоит синий арбуз Егориус. Ты отправляешься вернуть семена и спасти свой дом. Сначала нужно собрать листья в дорогу и добраться до Валика.</p>
+      <button id="begin-journey" type="button">Выйти из норы <span aria-hidden="true">↗</span></button>
+    </div>
+  </section>
+  <dialog class="recovery-dialog" aria-labelledby="recovery-title">
+    <div class="recovery-header">
+      <div class="tiny-logo" aria-hidden="true">Н</div>
+      <button class="dialog-close" type="button" aria-label="Закрыть окно" data-close-recovery>×</button>
+    </div>
+    <div class="recovery-content">
+      <p class="form-kicker">Возвращение в нору</p>
+      <h2 id="recovery-title">Забыл пароль?</h2>
+      <p class="form-note">Укажи почту, с которой регистрировался.</p>
+      <form id="recovery-form">
+        <label class="field">
+          <span>Почта</span>
+          <input type="email" name="email" placeholder="ты@пример.ру" autocomplete="email" required>
+        </label>
+        <button type="submit">Восстановить доступ <span aria-hidden="true">↗</span></button>
+      </form>
+      <p class="recovery-message" id="recovery-message" role="status" aria-live="polite"></p>
+    </div>
+  </dialog>
+  <section class="game-screen" hidden aria-labelledby="game-title">
+    <header class="game-header">
+      <div>
+        <p class="game-kicker">Первый выход из норы</p>
+        <h2 id="game-title">Кати. Собирай. <em>Не сдавайся.</em></h2>
+      </div>
+      <div class="game-level" aria-live="polite">
+        <span class="game-level-kicker" id="level-number">Этап 1 / 3</span>
+        <strong id="level-name">Сумеречная поляна</strong>
+        <span id="level-goal">Собери 10 листьев для перехода</span>
+      </div>
+      <div class="game-stats" aria-live="polite">
+        <span>Листья <strong id="score">0</strong></span>
+        <span>Рекорд <strong id="best-score">0</strong></span>
+      </div>
+    </header>
+
+    <div class="game-board" id="game-board" tabindex="0" aria-label="Игровое поле">
+      <div class="game-sky"></div>
+      <div class="game-moon"></div>
+      <div class="game-hill hill-back"></div>
+      <div class="game-hill hill-front"></div>
+      <div class="maze-layer" id="maze-layer" aria-hidden="true" hidden></div>
+      <div class="challenge-panel" id="challenge-panel" aria-live="polite" hidden>
+        <span class="challenge-kicker" id="challenge-kicker"></span>
+        <strong id="challenge-prompt"></strong>
+        <span class="challenge-progress" id="challenge-progress"></span>
+        <span class="challenge-cue" id="challenge-cue"></span>
+      </div>
+      <div class="challenge-course" id="challenge-course" aria-hidden="true" hidden></div>
+      <div class="boss-hud" id="boss-hud" hidden>
+        <strong id="boss-name">Жук-олень Валик</strong>
+        <div class="boss-health-track" id="boss-health" role="progressbar" aria-label="Здоровье Валика" aria-valuemin="0" aria-valuemax="12" aria-valuenow="12">
+          <span id="boss-health-fill"></span>
+        </div>
+        <span id="boss-health-label">12 / 12</span>
+      </div>
+      <div class="boss-player-health" id="boss-player-health" aria-live="polite" hidden>
+        <span>Твой панцирь</span>
+        <strong id="player-health-label">3 / 3</strong>
+      </div>
+      <div class="game-boss" id="game-boss" role="img" aria-label="Жук-олень Валик" hidden>
+        <span class="boss-horn boss-horn-left"></span>
+        <span class="boss-horn boss-horn-right"></span>
+        <span class="boss-carapace"></span>
+        <span class="boss-head"></span>
+      </div>
+      <div class="game-boss game-boss-watermelon" id="egorius-boss" role="img" aria-label="Синий арбуз по кличке Егориус" hidden>
+        <span class="watermelon-rind"></span>
+        <span class="watermelon-eye watermelon-eye-left"></span>
+        <span class="watermelon-eye watermelon-eye-right"></span>
+        <span class="watermelon-mouth"></span>
+      </div>
+      <div class="game-boss game-boss-cow" id="cow-boss" role="img" aria-label="КРАВА — Защитник класса" hidden>
+        <span class="cow-body"></span>
+        <span class="cow-horn cow-horn-left"></span>
+        <span class="cow-horn cow-horn-right"></span>
+        <span class="cow-face"></span>
+      </div>
+      <div class="game-boss game-boss-guardian" id="bogdan-boss" role="img" aria-label="Богдан Хагрид, хранитель туманного хребта" hidden>
+        <span class="guardian-cloak"></span>
+        <span class="guardian-head"></span>
+        <span class="guardian-staff"></span>
+      </div>
+      <div class="boss-attacks" id="boss-attacks" aria-hidden="true"></div>
+      <div class="game-dung-ball" id="dung-ball" aria-hidden="true"></div>
+      <div class="player-beetle" id="player-beetle" aria-label="Твой жук" role="img">
+        <span class="player-shell"></span>
+        <span class="player-head"></span>
+        <span class="player-leg player-leg-a"></span>
+        <span class="player-leg player-leg-b"></span>
+      </div>
+      <div class="game-items" id="game-items" aria-hidden="true"></div>
+      <div class="game-obstacles" id="game-obstacles" aria-hidden="true"></div>
+      <div class="game-hint" id="game-hint">Нажми ← → или A D, чтобы начать</div>
+    </div>
+
+    <div class="game-controls">
+      <p id="game-controls-copy"><span class="key">←</span><span class="key">→</span> двигай жука <span class="control-separator">·</span> собирай светящиеся листья <span class="control-separator">·</span> не врезайся в камни</p>
+      <div class="touch-controls" aria-label="Управление на экране">
+        <button class="touch-button" data-direction="-1" type="button" aria-label="Двигаться влево">←</button>
+        <button class="touch-button" data-direction="1" type="button" aria-label="Двигаться вправо">→</button>
+      </div>
+      <div class="maze-touch-controls" aria-label="Управление в лабиринте">
+        <button class="touch-button" data-maze-direction="up" type="button" aria-label="Идти вверх">↑</button>
+        <button class="touch-button" data-maze-direction="left" type="button" aria-label="Идти влево">←</button>
+        <button class="touch-button" data-maze-direction="down" type="button" aria-label="Идти вниз">↓</button>
+        <button class="touch-button" data-maze-direction="right" type="button" aria-label="Идти вправо">→</button>
+      </div>
+      <button class="attack-button" id="attack-boss" type="button" aria-label="Бросить семечко" aria-keyshortcuts="Space" title="Пробел" hidden>Бросить семечко <span aria-hidden="true">↑</span></button>
+      <button class="challenge-action" id="challenge-action" type="button" hidden></button>
+      <button class="dash-button" id="dash-button" type="button" aria-label="Рывок, готов">
+        <span id="dash-button-label">Рывок</span><span aria-hidden="true">⇢</span>
+      </button>
+      <button class="sound-toggle" id="sound-toggle" type="button" aria-pressed="false" aria-label="Включить музыку">
+        <span aria-hidden="true">♫</span><span id="sound-label">Музыка выключена</span>
+      </button>
+      <button class="restart-button" id="restart-game" type="button">Начать заново <span aria-hidden="true">↻</span></button>
+    </div>
+  </section>
+  <section class="story-screen" id="chapter-interlude" aria-labelledby="interlude-title" hidden>
+    <div class="story-content">
+      <p class="story-kicker">Глава первая завершена</p>
+      <h2 id="interlude-title">Поляна спасена.<br><em>Но покой недолог.</em></h2>
+      <p>Когда Валик отступил, из-под корней донёсся глухой гул. На старой карте проступил путь к синей арбузной цитадели.</p>
+      <button id="continue-chapter" type="button">Идти по карте <span aria-hidden="true">↗</span></button>
+    </div>
+  </section>
+  <section class="story-screen" id="cow-interlude" aria-labelledby="cow-interlude-title" hidden>
+    <div class="story-content">
+      <p class="story-kicker">Молочные пастбища</p>
+      <h2 id="cow-interlude-title">Пастбище открыто.<br><em>Но страж не отступит.</em></h2>
+      <p>Собранные семена вернули ручей к жизни. На тропе к туманному хребту стоит КРАВА — Защитник класса. Её тяжёлый топот сотрясает весь луг: приготовь рывок и найди момент для контратаки.</p>
+      <button id="continue-cow-stage" type="button">На пастбище <span aria-hidden="true">↗</span></button>
+    </div>
+  </section>
+  <section class="story-screen" id="bogdan-interlude" aria-labelledby="bogdan-interlude-title" hidden>
+    <div class="story-content">
+      <p class="story-kicker">За туманным хребтом</p>
+      <h2 id="bogdan-interlude-title">Дальше — только вершина.<br><em>И её хранитель.</em></h2>
+      <p>За арками туманного хребта начинается дорога домой. Её охраняет Богдан Хагрид — последний хранитель источника. Собери путевые огни, уклонись от каменного града и доберись до вершины.</p>
+      <button id="continue-bogdan-stage" type="button">Подняться на хребет <span aria-hidden="true">↗</span></button>
+    </div>
+  </section>
+  <section class="story-screen" id="game-ending" aria-labelledby="ending-title" hidden>
+    <div class="story-content">
+      <p class="story-kicker">Конец приключения</p>
+      <h2 id="ending-title">Источник спасён.<br><em>Дом снова ожил.</em></h2>
+      <p>Последний хранитель отступил. Ручей снова течёт через подземный сад, листья расправляются, и жуки возвращаются домой. Ты прошёл весь путь и спас нору.</p>
+      <button id="play-again" type="button">Начать сначала <span aria-hidden="true">↻</span></button>
+    </div>
+  </section>
+  <script src="app.js"></script>
+</body>
+</html>
