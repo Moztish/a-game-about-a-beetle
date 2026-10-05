@@ -38,6 +38,8 @@ public final class DacStore implements AutoCloseable {
                         password_hash BLOB NOT NULL,
                         password_salt BLOB NOT NULL,
                         role TEXT NOT NULL CHECK (role IN ('USER', 'ADMIN')),
+                        clearance TEXT NOT NULL DEFAULT 'UNCLASSIFIED'
+                            CHECK (clearance IN ('UNCLASSIFIED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET')),
                         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
                     """);
@@ -47,6 +49,8 @@ public final class DacStore implements AutoCloseable {
                         name TEXT NOT NULL UNIQUE COLLATE NOCASE,
                         content TEXT NOT NULL,
                         owner_id INTEGER NOT NULL REFERENCES users(id),
+                        classification TEXT NOT NULL DEFAULT 'UNCLASSIFIED'
+                            CHECK (classification IN ('UNCLASSIFIED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET')),
                         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
@@ -78,14 +82,22 @@ public final class DacStore implements AutoCloseable {
                     """);
             statement.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('audit_mode', 'ALL')");
         }
+        ensureColumn("users", "clearance", """
+                ALTER TABLE users ADD COLUMN clearance TEXT NOT NULL DEFAULT 'UNCLASSIFIED'
+                    CHECK (clearance IN ('UNCLASSIFIED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET'))
+                """);
+        ensureColumn("objects", "classification", """
+                ALTER TABLE objects ADD COLUMN classification TEXT NOT NULL DEFAULT 'UNCLASSIFIED'
+                    CHECK (classification IN ('UNCLASSIFIED', 'CONFIDENTIAL', 'SECRET', 'TOP_SECRET'))
+                """);
     }
 
     public synchronized Session register(String username, char[] password) throws SQLException {
         validateCredentials(username, password);
         connection.setAutoCommit(false);
         try {
-            Session session = insertUser(username, password, Role.USER);
-            audit(username, "REGISTER", username, "SUCCESS", "Создана учётная запись.", false);
+            Session session = insertUser(username, password, Role.USER, SecurityLevel.UNCLASSIFIED);
+            audit(username, "REGISTER", username, "SUCCESS", "Создана учётная запись.", true);
             connection.commit();
             return session;
         } catch (SQLException exception) {
@@ -126,7 +138,7 @@ public final class DacStore implements AutoCloseable {
                     throw new IllegalStateException("Администратор уже создан.");
                 }
             }
-            Session session = insertUser(username, password, Role.ADMIN);
+            Session session = insertUser(username, password, Role.ADMIN, SecurityLevel.TOP_SECRET);
             audit(username, "BOOTSTRAP_ADMIN", username, "SUCCESS", "Создан администратор.", true);
             connection.commit();
             return session;
@@ -195,14 +207,62 @@ public final class DacStore implements AutoCloseable {
         }
     }
 
+    synchronized SecurityLevel currentClearance(long userId) throws SQLException {
+        try (PreparedStatement query = connection.prepareStatement("SELECT clearance FROM users WHERE id = ?")) {
+            query.setLong(1, userId);
+            try (ResultSet result = query.executeQuery()) {
+                return result.next() ? SecurityLevel.valueOf(result.getString(1)) : null;
+            }
+        }
+    }
+
+    synchronized void updateClearance(long userId, SecurityLevel level) throws SQLException {
+        try (PreparedStatement update = connection.prepareStatement(
+                "UPDATE users SET clearance = ? WHERE id = ?")) {
+            update.setString(1, level.name());
+            update.setLong(2, userId);
+            update.executeUpdate();
+        }
+    }
+
+    synchronized List<UserInfo> listUsers() throws SQLException {
+        List<UserInfo> users = new ArrayList<>();
+        try (PreparedStatement query = connection.prepareStatement(
+                "SELECT id, username, role, clearance FROM users ORDER BY username");
+             ResultSet result = query.executeQuery()) {
+            while (result.next()) {
+                users.add(new UserInfo(result.getLong("id"), result.getString("username"),
+                        Role.valueOf(result.getString("role")),
+                        SecurityLevel.valueOf(result.getString("clearance"))));
+            }
+        }
+        return users;
+    }
+
+    synchronized boolean hasNoUsers() throws SQLException {
+        try (PreparedStatement query = connection.prepareStatement("SELECT 1 FROM users LIMIT 1");
+             ResultSet result = query.executeQuery()) {
+            return !result.next();
+        }
+    }
+
+    synchronized boolean hasAdministrator() throws SQLException {
+        try (PreparedStatement query = connection.prepareStatement(
+                "SELECT 1 FROM users WHERE role = 'ADMIN' LIMIT 1");
+             ResultSet result = query.executeQuery()) {
+            return result.next();
+        }
+    }
+
     synchronized UserObject findObject(long objectId) throws SQLException {
         try (PreparedStatement query = connection.prepareStatement(
-                "SELECT id, name, owner_id FROM objects WHERE id = ?")) {
+                "SELECT id, name, owner_id, classification FROM objects WHERE id = ?")) {
             query.setLong(1, objectId);
             try (ResultSet result = query.executeQuery()) {
                 return result.next()
                         ? new UserObject(result.getLong("id"), result.getString("name"),
-                                result.getLong("owner_id"))
+                                result.getLong("owner_id"),
+                                SecurityLevel.valueOf(result.getString("classification")))
                         : null;
             }
         }
@@ -220,13 +280,15 @@ public final class DacStore implements AutoCloseable {
         }
     }
 
-    synchronized long insertObject(String name, String content, long ownerId) throws SQLException {
+    synchronized long insertObject(String name, String content, long ownerId,
+                                   SecurityLevel classification) throws SQLException {
         try (PreparedStatement insert = connection.prepareStatement(
-                "INSERT INTO objects (name, content, owner_id) VALUES (?, ?, ?)",
+                "INSERT INTO objects (name, content, owner_id, classification) VALUES (?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
             insert.setString(1, name);
             insert.setString(2, content);
             insert.setLong(3, ownerId);
+            insert.setString(4, classification.name());
             insert.executeUpdate();
             try (ResultSet keys = insert.getGeneratedKeys()) {
                 if (keys.next()) {
@@ -295,21 +357,23 @@ public final class DacStore implements AutoCloseable {
         }
     }
 
-    synchronized List<ObjectInfo> listVisibleObjects(long userId) throws SQLException {
+    synchronized List<ObjectInfo> listVisibleObjects(long userId, boolean administrator) throws SQLException {
         List<ObjectInfo> objects = new ArrayList<>();
         try (PreparedStatement query = connection.prepareStatement("""
-                SELECT DISTINCT o.id, o.name, u.username AS owner
+                SELECT DISTINCT o.id, o.name, u.username AS owner, o.classification
                 FROM objects o JOIN users u ON u.id = o.owner_id
                 LEFT JOIN acl a ON a.object_id = o.id AND a.user_id = ?
-                WHERE o.owner_id = ? OR a.permission IS NOT NULL
+                WHERE ? = 1 OR o.owner_id = ? OR a.permission IS NOT NULL
                 ORDER BY o.id
                 """)) {
             query.setLong(1, userId);
-            query.setLong(2, userId);
+            query.setInt(2, administrator ? 1 : 0);
+            query.setLong(3, userId);
             try (ResultSet result = query.executeQuery()) {
                 while (result.next()) {
                     objects.add(new ObjectInfo(result.getLong("id"), result.getString("name"),
-                            result.getString("owner")));
+                            result.getString("owner"),
+                            SecurityLevel.valueOf(result.getString("classification"))));
                 }
             }
         }
@@ -416,16 +480,18 @@ public final class DacStore implements AutoCloseable {
         connection.setAutoCommit(true);
     }
 
-    private Session insertUser(String username, char[] password, Role role) throws SQLException {
+    private Session insertUser(String username, char[] password, Role role,
+                               SecurityLevel clearance) throws SQLException {
         byte[] salt = new byte[16];
         RANDOM.nextBytes(salt);
         try (PreparedStatement insert = connection.prepareStatement(
-                "INSERT INTO users (username, password_hash, password_salt, role) VALUES (?, ?, ?, ?)",
+                "INSERT INTO users (username, password_hash, password_salt, role, clearance) VALUES (?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
             insert.setString(1, username);
             insert.setBytes(2, hashPassword(password, salt));
             insert.setBytes(3, salt);
             insert.setString(4, role.name());
+            insert.setString(5, clearance.name());
             insert.executeUpdate();
             try (ResultSet keys = insert.getGeneratedKeys()) {
                 if (keys.next()) {
@@ -472,10 +538,27 @@ public final class DacStore implements AutoCloseable {
         connection.close();
     }
 
-    record UserObject(long id, String name, long ownerId) {
+    private void ensureColumn(String table, String column, String alterStatement) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (result.next()) {
+                if (column.equals(result.getString("name"))) {
+                    return;
+                }
+            }
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(alterStatement);
+        }
     }
 
-    public record ObjectInfo(long id, String name, String owner) {
+    record UserObject(long id, String name, long ownerId, SecurityLevel classification) {
+    }
+
+    public record ObjectInfo(long id, String name, String owner, SecurityLevel classification) {
+    }
+
+    public record UserInfo(long id, String username, Role role, SecurityLevel clearance) {
     }
 
     public record AclEntry(String username, Permission permission) {

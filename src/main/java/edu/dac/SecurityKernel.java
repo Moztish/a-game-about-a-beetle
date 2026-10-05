@@ -13,12 +13,25 @@ public final class SecurityKernel {
     }
 
     public synchronized long createObject(Session session, String name, String content) throws SQLException {
+        return createObject(session, name, content, SecurityLevel.UNCLASSIFIED);
+    }
+
+    public synchronized long createObject(Session session, String name, String content,
+                                          SecurityLevel classification) throws SQLException {
         if (name == null || name.isBlank() || name.trim().length() > 80) {
             throw new IllegalArgumentException("Имя объекта должно содержать от 1 до 80 символов.");
         }
         validateContent(content);
+        if (classification == null) {
+            throw new IllegalArgumentException("Уровень секретности объекта не задан.");
+        }
         return run(session, "CREATE", name.trim(), null, null, false, () -> {
-            long objectId = store.insertObject(name.trim(), content, session.userId());
+            SecurityLevel clearance = store.currentClearance(session.userId());
+            if (clearance == null || !clearance.mayWrite(classification)) {
+                deny(session, "CREATE", name.trim(),
+                        "No Write Down: нельзя создать объект ниже уровня допуска субъекта.");
+            }
+            long objectId = store.insertObject(name.trim(), content, session.userId(), classification);
             for (Permission permission : Permission.values()) {
                 store.grantPermission(objectId, session.userId(), permission);
             }
@@ -84,7 +97,18 @@ public final class SecurityKernel {
 
     public synchronized List<DacStore.ObjectInfo> listObjects(Session session) throws SQLException {
         return run(session, "LIST_OBJECTS", "-", null, null, false,
-                () -> store.listVisibleObjects(session.userId()));
+                () -> store.listVisibleObjects(session.userId(),
+                        store.currentRole(session.userId()) == Role.ADMIN));
+    }
+
+    public synchronized SecurityLevel clearance(Session session) throws SQLException {
+        return run(session, "VIEW_CLEARANCE", "-", null, null, false,
+                () -> store.currentClearance(session.userId()));
+    }
+
+    public synchronized Role role(Session session) throws SQLException {
+        return run(session, "VIEW_ROLE", "-", null, null, false,
+                () -> store.currentRole(session.userId()));
     }
 
     public synchronized List<DacStore.AclEntry> aclMatrix(Session session, long objectId) throws SQLException {
@@ -125,6 +149,36 @@ public final class SecurityKernel {
         });
     }
 
+    public synchronized List<DacStore.UserInfo> users(Session session) throws SQLException {
+        return run(session, "LIST_USERS", "-", null, null, false, () -> {
+            if (store.currentRole(session.userId()) != Role.ADMIN) {
+                deny(session, "LIST_USERS", "-", "Список пользователей доступен только администратору.");
+            }
+            return store.listUsers();
+        });
+    }
+
+    public synchronized void setClearance(Session session, String username,
+                                          SecurityLevel clearance) throws SQLException {
+        if (clearance == null) {
+            throw new IllegalArgumentException("Уровень допуска не задан.");
+        }
+        run(session, "SET_CLEARANCE", username, null, null, false, () -> {
+            if (store.currentRole(session.userId()) != Role.ADMIN) {
+                deny(session, "SET_CLEARANCE", username, "Назначать допуск может только администратор.");
+            }
+            Long userId = store.findUserId(username);
+            if (userId == null) {
+                throw new IllegalArgumentException("Пользователь не найден.");
+            }
+            SecurityLevel previous = store.currentClearance(userId);
+            store.updateClearance(userId, clearance);
+            store.auditWithMode(session.username(), "SET_CLEARANCE", username, "SUCCESS",
+                    "Допуск изменён с " + previous + " на " + clearance + ".", true, store.auditMode());
+            return null;
+        });
+    }
+
     public synchronized String simulateTrojanRead(Session session, long objectId) throws SQLException {
         return run(session, "TROJAN_READ_ATTEMPT", Long.toString(objectId), objectId,
                 null, false, () -> {
@@ -132,6 +186,8 @@ public final class SecurityKernel {
                     boolean allowed = store.currentRole(session.userId()) == Role.ADMIN
                             || object.ownerId() == session.userId()
                             || store.hasPermission(objectId, session.userId(), Permission.READ);
+                    allowed = allowed && store.currentClearance(session.userId())
+                            .mayRead(object.classification());
                     return allowed ? "WOULD_ALLOW" : "DENIED";
                 });
     }
@@ -163,16 +219,27 @@ public final class SecurityKernel {
                             && !store.hasPermission(objectId, session.userId(), permission)) {
                         deny(session, operation, object.name(), "Нет права " + permission + ".");
                     }
+                    if (operation.equals("READ")
+                            && !store.currentClearance(session.userId()).mayRead(object.classification())) {
+                        deny(session, operation, object.name(), "No Read Up: допуск субъекта ниже уровня объекта "
+                                + object.classification().displayName() + ".");
+                    }
+                    if (operation.equals("WRITE")
+                            && !store.currentClearance(session.userId()).mayWrite(object.classification())) {
+                        deny(session, operation, object.name(), "No Write Down: уровень субъекта выше уровня объекта "
+                                + object.classification().displayName() + ".");
+                    }
                 }
                 T result = action.execute();
                 String auditTarget = object == null ? target : object.name();
                 boolean trojanAttempt = operation.equals("TROJAN_READ_ATTEMPT");
-                boolean auditModeChange = operation.equals("SET_AUDIT_MODE");
+                boolean hasSpecificAudit = operation.equals("SET_AUDIT_MODE")
+                        || operation.equals("SET_CLEARANCE");
                 String auditResult = trojanAttempt ? result.toString() : "SUCCESS";
                 String auditDetails = trojanAttempt
                         ? "Безопасная симуляция: проверены только права, содержимое не читалось."
                         : "Операция выполнена.";
-                if (!auditModeChange) {
+                if (!hasSpecificAudit) {
                     store.audit(username, operation, auditTarget, auditResult,
                             auditDetails, isSecurityEvent(operation));
                 }
@@ -210,7 +277,8 @@ public final class SecurityKernel {
 
     private static boolean isSecurityEvent(String operation) {
         return Set.of("DENIED", "REGISTER", "LOGIN", "BOOTSTRAP_ADMIN", "SET_AUDIT_MODE",
-                "GRANT", "REVOKE", "TROJAN_READ_ATTEMPT").contains(operation);
+                "SET_CLEARANCE", "GRANT", "REVOKE", "TROJAN_READ_ATTEMPT",
+                "PROCESS_READ", "PROCESS_TROJAN").contains(operation);
     }
 
     private static void validateContent(String content) {
@@ -223,6 +291,7 @@ public final class SecurityKernel {
         if (permissions == null || permissions.isEmpty()) {
             throw new IllegalArgumentException("Нужно указать хотя бы одно право.");
         }
+
     }
 
     @FunctionalInterface
